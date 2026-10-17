@@ -1,0 +1,31 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.ipynb_checkpoints/
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Restricted source data and generated features
+*.pkl
+*.pickle
+*.npz
+*.npy
+
+# Videos/camera captures and local output
+*.mp4
+*.avi
+*.mov
+output/
+outputs/
+artifacts/
+
+# Model weights: distribute separately only if permissions allow
+*.pth
+*.pt
+*.onnx
+
+# Local logs and generated reports (commit selected clean reports under reports/)
+*.log

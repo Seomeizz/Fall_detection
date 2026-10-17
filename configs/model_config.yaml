@@ -1,0 +1,45 @@
+project:
+  name: fall-detection
+  task: eight-class skeleton action recognition
+  deployment_model: Transformer
+  dataset: NTU RGB+D 60 (mapped subset from selected action IDs)
+
+classes:
+  - walking
+  - standing
+  - sitting
+  - bending
+  - falling
+  - getting_up
+  - stumbling
+  - abnormal_movement
+
+input:
+  keypoints: COCO-17 2D
+  sequence_length: 30
+  features_per_frame: 51
+  feature_layout: 34 normalized XY + 17 keypoint confidence values
+  confidence_threshold: 0.20
+  max_normalized_coordinate: 8.0
+  temporal_resampling: uniform over the complete source clip
+  normalization: first valid hip origin and median torso-length scale, shared over clip
+
+transformer:
+  feature_dim: 51
+  d_model: 128
+  heads: 4
+  encoder_layers: 4
+  feedforward_dim: 256
+  dropout: 0.15
+  activation: gelu
+  temporal_pooling: mean
+
+training:
+  batch_size: 128
+  max_epochs: 30
+  optimizer: AdamW
+  learning_rate: 0.0005
+  weight_decay: 0.05
+  label_smoothing: 0.05
+  early_stopping_patience: 6
+  checkpoint_selection: validation macro-F1 across 8 grouped classes

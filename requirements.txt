@@ -1,0 +1,10 @@
+# Install a compatible PyTorch build separately before this list.
+# See https://pytorch.org/get-started/locally/
+numpy>=1.24
+opencv-python>=4.8
+ultralytics>=8.3
+pandas>=2.0
+matplotlib>=3.7
+scikit-learn>=1.3
+tqdm>=4.66
+PyYAML>=6.0
