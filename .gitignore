@@ -1,3 +1,4 @@
+# Python
 __pycache__/
 *.py[cod]
 .venv/
@@ -7,6 +8,7 @@ venv/
 .DS_Store
 Thumbs.db
 .vscode/
+.pytest_cache/
 
 # Restricted source data and generated features
 *.pkl
@@ -20,12 +22,30 @@ Thumbs.db
 *.mov
 output/
 outputs/
-artifacts/
 
-# Model weights: distribute separately only if permissions allow
+# Model checkpoints and downloaded weights: distribute separately only if permissions allow
+artifacts/*
+!artifacts/README.md
+!artifacts/.gitkeep
 *.pth
 *.pt
 *.onnx
 
-# Local logs and generated reports (commit selected clean reports under reports/)
+# FastAPI runtime data
+backend/.env
+backend/runtime/*
+!backend/runtime/.gitkeep
 *.log
+*.sqlite3
+
+# Flutter build/runtime files
+mobile_app/.dart_tool/
+mobile_app/build/
+mobile_app/.packages
+mobile_app/.flutter-plugins
+mobile_app/.flutter-plugins-dependencies
+mobile_app_runtime/
+.flutter-plugins
+.dart_tool/
+build/
+android/.gradle/

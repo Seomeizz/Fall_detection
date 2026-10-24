@@ -1,0 +1,208 @@
+Metadata-Version: 2.4
+Name: fall-detection-transformer-8class
+Version: 0.1.0
+Summary: Eight-class skeleton action recognition with a temporal Transformer
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+License-File: LICENSE_NOTE.md
+Requires-Dist: numpy>=1.24
+Requires-Dist: opencv-python>=4.8
+Requires-Dist: ultralytics>=8.3
+Requires-Dist: PyYAML>=6.0
+Requires-Dist: fastapi>=0.115
+Requires-Dist: uvicorn[standard]>=0.30
+Requires-Dist: python-dotenv>=1.0
+Dynamic: license-file
+
+# Fall Detection — Temporal Transformer 8 lớp
+
+Dự án nghiên cứu nhận diện hành động từ chuỗi skeleton COCO-17 bằng **Temporal Transformer**, với lớp `falling` dùng làm tín hiệu cho bộ xác nhận sự kiện té ngã. Hệ thống demo chạy AI trên laptop, sử dụng webcam, theo dõi người bằng YOLO Pose + BoT-SORT, rồi cung cấp video và cảnh báo cho ứng dụng Flutter qua FastAPI.
+
+> **Phạm vi:** model hiện tại là bộ phân loại **8 nhóm hành động**, không phải bộ phân loại nhị phân `fall / non-fall`. Bộ xác nhận cảnh báo còn dùng heuristic hình học/thời gian và cần được kiểm thử độc lập trên video có nhãn. Đây là prototype nghiên cứu, không phải thiết bị y tế hay hệ thống an toàn được chứng nhận.
+
+## 1. Pipeline AI
+
+```text
+Webcam laptop
+  -> YOLO Pose: COCO-17 keypoints
+  -> BoT-SORT: track ID theo người
+  -> lưu chuỗi pose gần nhất theo từng người
+  -> resample 30 frame
+  -> nội suy keypoints + chuẩn hoá theo hông/độ dài thân
+  -> 51 đặc trưng/frame (34 XY chuẩn hoá + 17 confidence)
+  -> Temporal Transformer 8 lớp
+  -> dự đoán hành động + xác suất falling
+  -> bộ xác nhận sự kiện dựa trên chuyển động/hình học
+  -> vẽ overlay lên video
+  -> FastAPI MJPEG/WebSocket/REST
+  -> ứng dụng Flutter trên điện thoại
+```
+
+## 2. Tám nhóm nhãn
+
+Các nhóm dưới đây được dự án tự ánh xạ từ action ID của NTU RGB+D 60, không phải 8 lớp chuẩn nguyên bản của bộ dữ liệu.
+
+| Nhãn dự án | Action ID NTU | Ghi chú |
+|---|---|---|
+| `walking` | A059, A060 | Nhóm đi bộ theo mapping hiện tại |
+| `standing` | A001–A004, A010, A014, A015, A018–A023, A028, A031–A033, A035, A036, A038–A041, A049, A056, A058 | Nhóm gộp hiện tại gồm cả một số hoạt động không đồng nghĩa tuyệt đối với tư thế đứng; cần nêu rõ hạn chế này khi báo cáo |
+| `sitting` | A008, A011, A012, A029, A030 | Nhóm có các hành động liên quan đến ngồi |
+| `bending` | A005, A006, A013, A025, A037 | Nhóm gần với cúi/nhặt/giơ người nhưng chưa phải nhãn tư thế thuần |
+| `falling` | A043 | Hành động té ngã trong NTU |
+| `getting_up` | A009 | Đứng lên |
+| `stumbling` | A042 | Đi loạng choạng |
+| `abnormal_movement` | A044–A048 | Nhóm gộp các hành động liên quan đau/bất thường, tên nhóm là quy ước của dự án |
+
+Trước khi dùng kết quả để khẳng định hiệu năng thực tế, cần đánh giá sự phù hợp của mapping nhãn và khả năng tổng quát hoá từ keypoints trích xuất sẵn trong dataset sang keypoints do YOLO tạo từ webcam.
+
+## 3. Kiến trúc Transformer triển khai
+
+- Đầu vào mỗi clip: `30 × 51`.
+- Projection: `51 → 128`, LayerNorm, ReLU, Dropout 0,15.
+- Sinusoidal positional encoding.
+- 4 Transformer Encoder layers; `d_model=128`, 4 attention heads, FFN 256, GELU, pre-norm.
+- LayerNorm, mean pooling theo thời gian.
+- Classification head: `128 → 64 → 8`.
+
+`src/fall_detection/` chứa một nguồn định nghĩa chung cho nhãn, kiến trúc và tiền xử lý; `scripts/run_demo.py` và backend import lại các module này để giảm nguy cơ train/inference khác nhau.
+
+## 4. Cấu trúc thư mục
+
+```text
+backend/
+  app/main.py                   FastAPI routes, WebSocket, MJPEG stream
+  app/config.py                 Cấu hình camera/model từ environment
+  app/services/ai_camera.py     Worker webcam + YOLO + Transformer
+  app/services/event_store.py   Lưu lịch sử event JSON cho MVP
+  app/services/ws_hub.py        Phát sự kiện qua WebSocket
+  runtime/                      File runtime; bị loại khỏi Git
+  README.md                     Hướng dẫn backend
+mobile_app/
+  lib/main.dart                 UI Flutter; video, trạng thái, event, settings
+  pubspec.yaml                  Dependencies Flutter
+src/fall_detection/
+  labels.py                     Mapping nhãn và kích thước đầu vào
+  model.py                      Temporal Transformer classifier
+  preprocessing.py              Resampling, nội suy, chuẩn hoá COCO-17
+scripts/run_demo.py             Test video hoặc webcam ra MP4
+notebooks/                      Notebook train và so sánh mô hình
+configs/                        Cấu hình mô hình
+reports/                        Metrics/biểu đồ được chọn lọc
+artifacts/                      Đặt checkpoint tại đây; model weights bị Git ignore
+assets/                         Hình/GIF/demo UI; không chứa video riêng tư
+outputs/                        Video kết quả cục bộ; bị Git ignore
+```
+
+## 5. Huấn luyện và checkpoint
+
+Mở `notebooks/train_compare_8class.ipynb` trên Kaggle, thêm dataset `ntu60_2d.pkl` theo điều khoản được cấp, rồi chạy toàn bộ notebook. Notebook so sánh Transformer, BiLSTM, BiGRU và TCN theo cùng protocol cấp clip; checkpoint Transformer được lưu trong thư mục output của Kaggle.
+
+Tải checkpoint được tạo ra và đặt cục bộ ở:
+
+```text
+artifacts/best_transformer_8class.pth
+```
+
+Checkpoint không được commit mặc định. Không đưa dataset NTU hoặc file keypoints phái sinh lên GitHub nếu chưa có quyền phân phối phù hợp. Xem `docs/data_and_evaluation.md` và `LICENSE_NOTE.md`.
+
+## 6. Chạy giao diện Flutter trên điện thoại trước (chưa cần backend)
+
+Bạn có thể cài app và xem giao diện ngay cả khi FastAPI/AI chưa chạy. Lúc này trạng thái sẽ là “Chưa kết nối laptop” và trang Camera hiển thị placeholder; điều đó là bình thường.
+
+Yêu cầu: Flutter SDK, Android SDK và điện thoại Android bật USB debugging. Trên điện thoại, mở Cài đặt → Giới thiệu điện thoại → chạm “Số bản dựng” 7 lần để bật Developer options, sau đó bật USB debugging. Kết nối điện thoại qua USB và chấp nhận lời nhắc cho phép máy tính gỡ lỗi.
+
+Mở PowerShell tại thư mục gốc repository và chạy:
+
+```powershell
+flutter doctor -v
+flutter devices
+powershell -ExecutionPolicy Bypass -File .\mobile_app\run_on_android.ps1
+```
+
+Script tự tạo project Android trong `mobile_app_runtime/`, sao chép `mobile_app/lib/main.dart` và `mobile_app/pubspec.yaml`, cấu hình quyền Internet/HTTP nội bộ cho lúc phát triển, tải dependencies rồi chạy app. Thư mục `mobile_app_runtime/` được `.gitignore` loại khỏi Git vì đây là bản build/runtime được tạo trên máy bạn; source chính vẫn nằm trong `mobile_app/`.
+
+Nếu Flutter không thấy điện thoại, thử `flutter devices`, chạy `flutter doctor --android-licenses`, kiểm tra driver USB trên Windows và đảm bảo điện thoại đã bấm Allow. Có thể chạy bằng Android Emulator nếu đã tạo emulator.
+
+## 7. Cài đặt backend trên Windows
+
+Dùng Python 3.10 hoặc 3.11. Cài PyTorch tương thích với CPU/CUDA của máy theo hướng dẫn chính thức: <https://pytorch.org/get-started/locally/>.
+
+Từ thư mục gốc dự án:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python -m pip install -e .
+```
+
+Sao chép `backend/.env.example` thành `backend/.env` nếu cần đổi camera, checkpoint hoặc weights. Giá trị mặc định:
+
+- camera index `0`;
+- checkpoint `artifacts/best_transformer_8class.pth`;
+- YOLO Pose `yolo11l-pose.pt`, `imgsz=960` để ưu tiên chất lượng nhận diện;
+- lật ngang camera trước khi detect và vẽ chữ, để hình giống gương nhưng chữ không bị đảo.
+
+Nếu laptop xử lý chậm, cấu hình `FALLGUARD_POSE_WEIGHTS=yolo11n-pose.pt` và `FALLGUARD_IMGSZ=640`. Model nhỏ hơn thường nhanh hơn, nhưng có thể làm chất lượng keypoints giảm; cần tự đánh giá trên video mục tiêu.
+
+### Khởi chạy FastAPI
+
+```powershell
+python -m uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000
+```
+
+Có thể dùng `backend/start_backend.ps1` hoặc `backend/start_backend.bat`. Mặc định backend tự khởi động webcam. Đóng `scripts/run_demo.py` hoặc ứng dụng khác đang sử dụng camera trước khi mở backend.
+
+Mở các địa chỉ trên laptop:
+
+- `http://127.0.0.1:8000/` — video AI trong trình duyệt.
+- `http://127.0.0.1:8000/docs` — API docs.
+- `http://127.0.0.1:8000/api/status` — trạng thái AI/camera.
+- `http://127.0.0.1:8000/api/events` — lịch sử cảnh báo.
+- `http://127.0.0.1:8000/stream.mjpg` — luồng video MJPEG.
+
+## 8. Kết nối app Flutter trên điện thoại
+
+Source chính của app nằm trong `mobile_app/`; script `mobile_app/run_on_android.ps1` tạo project Android chạy thử trong `mobile_app_runtime/`, copy source và tự cấu hình quyền Internet/HTTP nội bộ. Nếu bạn chưa chạy app lần nào, hãy làm theo mục 6 trước.
+
+Để kết nối:
+
+1. Laptop và điện thoại phải cùng Wi-Fi.
+2. Chạy `ipconfig` ở laptop và tìm IPv4 của adapter Wi-Fi, ví dụ `192.168.1.25`.
+3. Trong app → **Cài đặt**, nhập `http://192.168.1.25:8000`, lưu địa chỉ và kiểm tra API. Không dùng `localhost` trên điện thoại.
+4. Tab **Camera** hiển thị `/stream.mjpg` và có nút bật/dừng camera. Tab **Sự kiện** đọc `/api/events`, nhận event mới từ `/ws` và dùng polling làm dự phòng.
+5. Nếu không kết nối được, kiểm tra Windows Firewall cho mạng Private và cổng 8000.
+
+### API backend
+
+| Method | Endpoint | Mục đích |
+|---|---|---|
+| GET | `/api/health` | Health check |
+| GET | `/api/status` | Trạng thái camera/model, FPS, dự đoán gần nhất |
+| GET | `/api/events?limit=50` | Danh sách sự kiện |
+| POST | `/api/events/{id}/ack` | Đánh dấu sự kiện đã xem |
+| POST | `/api/camera/start` / `/api/camera/stop` | Điều khiển camera worker |
+| GET | `/stream.mjpg` | MJPEG video đã có overlay AI |
+| WS | `/ws` | Thông báo sự kiện mới đã xác nhận |
+
+Lịch sử event cục bộ nằm tại `backend/runtime/events.json`, không được commit.
+
+## 9. Kiểm thử
+
+Sau khi cài dependencies và cài project ở chế độ editable:
+
+```powershell
+python -m pytest tests -q
+```
+
+Các test hiện có kiểm tra shape đầu ra Transformer, tiền xử lý và hợp đồng API cơ bản. Chúng **không thay thế** kiểm thử inference với webcam hoặc đánh giá định lượng trên video có ground-truth.
+
+## 10. Giới hạn và bảo mật
+
+- Nhãn `standing`, `sitting`, `bending` là nhóm gộp do dự án định nghĩa; ranh giới nhãn không hoàn toàn thuần về tư thế.
+- Dữ liệu keypoints train lấy từ NTU, còn inference webcam lấy từ YOLO Pose; khác biệt miền có thể làm giảm chất lượng.
+- Luật xác nhận té ngã là heuristic, cần đo Recall sự kiện, báo động giả/giờ video và độ trễ trên video có nhãn.
+- Backend MVP chưa có tài khoản, xác thực hay HTTPS. **Không mở port 8000 trực tiếp ra Internet**; chỉ chạy trong mạng LAN tin cậy.
+- Firebase Cloud Messaging và theo dõi từ xa qua Internet chưa được triển khai; app cần mở và kết nối tới laptop để nhận event ở phiên bản hiện tại.
+- Kiểm tra điều khoản dataset, weights YOLO và các thành phần trước khi chọn license hoặc phân phối model.
